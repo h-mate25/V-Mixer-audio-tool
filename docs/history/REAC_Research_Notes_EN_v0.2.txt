@@ -1,0 +1,1239 @@
+V-MIXER DAW INTEGRATION
+REAC research notes — source review and validation roadmap
+Version 0.2 | Updated 25 October 2026 | Language: English
+Source review: 17 October 2026. New capture evidence: Section 16.
+
+PURPOSE AND EVIDENCE
+
+This is a working engineering notebook for understanding Roland REAC and choosing
+a path toward V-Mixer/DAW integration. It covers the FreeREAC organisation and all
+four additional repositories supplied for this review. Source revisions and
+per-file references are recorded at the end.
+
+This review inspected documentation and selected implementation files. It also
+examined bounded samples from three public packet captures. It did not connect
+to Roland hardware, install a driver, run a live audio test, or verify every
+device/firmware combination. Complete operational understanding remains a goal,
+not a result claimed by this document.
+
+Evidence labels used below:
+  [VENDOR]    Roland product documentation.
+  [CODE]      Behaviour or constants directly inspected in source code.
+  [PROJECT]   A project's report of its own experiments or supported behaviour.
+  [CHECKED]   A check actually performed during this review.
+  [INFERENCE] Engineering interpretation requiring further verification.
+  [OPEN]      Unresolved, contradictory, or outside the evidence available here.
+
+Reference identifiers such as [F1] resolve to exact files in Section 14.
+Project claims of testing are not presented as our own hardware measurements.
+
+1. MAIN FINDINGS
+
+1.1 REAC is raw Layer-2 Ethernet audio, identified by EtherType 0x8819. It is
+    not an IP/UDP audio stream. Receiving Ethernet frames, decoding samples,
+    maintaining a REAC session, and exposing an audio device to a DAW are
+    separate engineering tasks. [CODE: F3, F5, O2, W2]
+
+1.2 FreeREAC provides the strongest starting point among these sources for a
+    broad implementation: protocol documentation, a C protocol library,
+    Linux transport/timing code, a PipeWire endpoint, and preamp controls.
+    This is an assessment of scope, not certification of reliability. [F1–F12]
+
+1.3 The older projects remain useful. The 2012 Mac driver documents early
+    connection handshakes; Norihiro's projects make the audio unpacking clear;
+    ManuKapel adds practical Windows ASIO and macOS HAL integration examples.
+    These projects are related sources, not four independent confirmations.
+
+1.4 Not every additional project is old: the checked main-branch commits are
+    from 2012 for reacdriver, 2023 for reaccapture, and 2026 for both the OBS
+    plugin and ManuKapel's prototype. Commit dates do not establish stability.
+
+1.5 Several important source contradictions were found. Most notably:
+    - ManuKapel's README says audio starts at byte 54; its code uses byte 50.
+    - Newer libreac implements the inner DT1 checksum modulo 128, while older
+      protocol prose describes a more restrictive sum modulo 256.
+    - Some FreeREAC prose says there is no rate field; other documentation and
+      code identify an explicit rate-class byte in master announcements.
+    - The channel-address base rule has a documented S-4000H exception/open item.
+    - reac-pw's automatic role behaviour differs from parts of its README.
+    See Section 9 before copying any protocol description into implementation.
+
+2. REPOSITORY MAP AND REUSE VALUE
+
+2.1 FreeREAC core
+
+reac-protocol
+  Role: wire format, control lifecycle, Kaitai Struct grammar, and a machine-
+  readable protocol-facts file. Read this with libreac, not in isolation.
+  Best use: terminology, field layout, candidate test vectors, open questions.
+  Limitation: documentation contains historical assumptions and contradictions.
+  [F1, F2, F3]
+
+libreac
+  Role: two libraries in one repository. The protocol library handles frames,
+  audio packing, control messages, identity, head-amp records and state machines.
+  libreac-transport supplies sockets, rings, pacing, interface/VLAN handling and
+  orchestration. The core is designed without sockets, threads or allocation;
+  the present transport implementation is Linux-oriented. [F4–F10]
+  Best use: central protocol implementation to study and potentially reuse.
+  A portable core does not make its transport a ready-made Windows/Mac driver.
+
+reac-pw
+  Role: binds the REAC implementation to PipeWire capture/playback nodes. The
+  checked source includes master, slave and passive tap paths, plus stagebox
+  emulation configuration. It depends on libreac and libreac-transport.
+  Best use: Linux multichannel DAW integration and a reference for separating
+  network timing from audio-graph processing. [F11, F12]
+
+reac-stageboxes
+  Role: desktop frontend for preamp parameters exposed by reac-pw.
+  Best use: inspect the control API and distinction between requested settings
+  and observable hardware state. It is not the raw protocol implementation.
+
+2.2 Other FreeREAC components
+
+reac-label: reads console channel names and patch information through a separate
+remote-control connection. Relevant when a Roland desk owns the patch. The
+project describes V-Mixer RAI/RAO token mapping, but reports that M-5000 PIQ/POQ
+queries do not expose its routing through that ASCII LAN path. Older desks may
+need a serial-to-TCP bridge; do not assume every V-Mixer has native TCP 8023.
+These are model-specific project findings, not a universal remote API. [F13]
+
+reac-tools: frame transport diagnostics, including loss/reordering/jitter and
+protocol inspection. reac-analysis: signal analysis and clock-quality experiments.
+Use the first to investigate delivery and the second to investigate recovered
+audio. A clean packet count is insufficient evidence of correct sound. [F14]
+
+reac-captures: public capture corpus and manifest. Some data is distilled,
+sampled, truncated or mirrored. Its manifest must be read before interpreting
+timing, packet loss or audio. The large corpus checkout did not finish within
+the transfer limit in this review; selected available files were inspected.
+This was not a complete corpus audit. [F15]
+
+reac-transport: OpenWrt VLAN/GRETAP network configuration.
+reac-repacer: receiver-side pacing for a bursty network path. It restamps frame
+counters and may repeat frames during underrun; it is not byte-for-byte
+transparent under all conditions. Neither is required for the initial direct-
+cable experiment. Their documentation also contains older rate wording. [F16]
+
+reac-docs and reac-lab: engineering context, findings, and publication material.
+Use these as supporting evidence and experiment history. Some links and older
+architecture descriptions are stale. A reac-aes67 bridge is mentioned by these
+repositories, but was not present in the organisation inventory obtained for
+this review. Its current availability and implementation were not established.
+
+2.3 per-gron/reacdriver
+
+  Checked commit date: 2012-07-16.
+  Architecture: an OS X CoreAudio kernel extension, REAC.kext.
+  README scope: tested with S-1608; hard-coded split mode and 16 inputs;
+  incomplete master support and incomplete/stub slave work.
+  Useful files: REACConstants.*, REACDataStream.*, REACSplitDataStream.*,
+  REACMasterDataStream.*, REACSlaveDataStream.*, MbufUtils.cpp. [P1, P2]
+
+  Value: historical framing, sample conversion and split acknowledgement.
+  Limit: this is not a modern supported macOS installer. Its warning about OS
+  scheduling describes that implementation and period; it is not proof that
+  every software transmitter is impossible. Do not use its installation steps
+  as current macOS guidance without a separate platform review.
+
+2.4 norihiro/obs-h8819-source
+
+  Checked commit date: 2026-03-31.
+  Role: receives REAC audio into OBS. The UI selects L/R channels from 1–40.
+  README test target: M-200i at 48 kHz; 44.1 kHz is not supported there.
+  capdev-proc.c uses a 50-byte pre-audio header and the channel-pair braid.
+  It also implements sequence checks and capture buffering. [O1, O2]
+
+  Value: an understandable audio-reception example.
+  Limits: an OBS source is not a general DAW driver. The checked receive path
+  retains a destination-address TODO and assumes 40-channel audio without a
+  full 1492-byte minimum check before unpacking. A new implementation needs
+  explicit length, direction, VLAN and per-stream validation.
+
+2.5 norihiro/reaccapture
+
+  Checked commit date: 2023-05-20.
+  Role: user-space capture-file conversion; README workflow is tcpdump to pcap,
+  then reaccapture --load-pcap-file ... --save-wav-24.
+  It derives from per-gron's work. Its WAV writer hard-codes 48000 in the
+  inspected source. [N1, N2]
+
+  Value: offline decoding, sample conversion and reproducible capture analysis.
+  Limit: a WAV generated successfully is not evidence that its sample rate,
+  channel labels, lost-packet policy or physical input mapping are correct.
+
+2.6 ManuKapel/REAC-driver-Windows-Mac
+
+  Checked commit date: 2026-05-08.
+  Role: 48 kHz / 40-channel receive prototype using Npcap/libpcap.
+  Windows: a stereo waveOut player and a 40-input ASIO prototype for Reaper.
+  Its two ASIO outputs go to local Windows waveOut monitoring, not REAC TX.
+  macOS: a Core Audio HAL AudioServerPlugIn exposing 40 inputs and two outputs
+  for DAW compatibility; its documented output count is not proof of REAC TX.
+  [W1–W4]
+
+  Value: concrete native DAW adapter examples and a small decoder.
+  Limits: fixed sample rate, prototype status, BPF permissions/signing work,
+  and clock-domain handling requiring further engineering. The ASIO callback
+  loop advances using steady_clock/sleep_until at nominal 48 kHz; the ring
+  fills underruns with zero and overwrites oldest samples on overflow. The
+  inspected paths do not establish long-term synchronization to REAC. [W5]
+
+  No repository-level LICENSE/COPYING file was found in the checked tree, and
+  GitHub metadata returned no licence. Its README acknowledges GPL upstream
+  code. Record this provenance gap before reusing/distributing code; do not
+  assume the absence of a licence makes it unrestricted.
+
+3. SYSTEM MODEL: FOUR DIFFERENT PLANES
+
+Audio plane
+  Packed 24-bit samples in raw Ethernet frames. The position of a sample in
+  a frame is distinct from its physical socket and console channel name.
+
+REAC control plane
+  Session establishment, inventory, identity, scene/configuration transfer,
+  keepalive and stagebox analogue preamp settings, alongside the audio.
+
+Clock plane
+  The segment master supplies the transport cadence. Followers recover or
+  track that timing. Host audio scheduling and any other sound card introduce
+  additional clocks that need explicit synchronization or resampling.
+
+Console/DAW control plane
+  Console patch, names, DSP, faders and remote commands. Much of this lives
+  outside the REAC stagebox-control messages. Audio connectivity alone does
+  not implement DAW transport control, motor-fader feedback or a control-surface
+  protocol. These are separate integration requirements. [F13; INFERENCE]
+
+Keep five identifiers separate in all future code and notes:
+  physical input/output socket;
+  upstream/downstream audio slot;
+  head-amp wire address;
+  console channel strip and patch source;
+  DAW channel and user-facing name.
+
+4. EQUIPMENT AND TOPOLOGY
+
+4.1 Roles
+
+The documented hardware link is 100BASE-TX full duplex over Cat5e-class
+cabling. Roland documents 100-metre cable segments for its REAC extension
+system. Gigabit switches/trunks can carry the frames, but that does not make
+the attached REAC device a gigabit endpoint. [F1, R7]
+
+MASTER owns the REAC segment timing. A console normally sends a 40-slot
+downstream broadcast. A stagebox can also operate as master, with different
+width and control behaviour. Do not infer the role from the product name alone.
+
+SLAVE follows a master, participates in establishment, and returns audio toward
+the learned master MAC. This is an active role, even if the software operator
+only intends to record.
+
+SPLIT is the receive-oriented role in the Roland system. Historical driver
+code participates in split announcements/acknowledgement. A strictly passive
+packet tap sends nothing at all; it is a different implementation choice.
+Receiving a broadcast does not require completion of an active handshake.
+[PROJECT/CODE: F1, F2, P1, P2, F12]
+
+4.2 Device families to understand
+
+V-Mixer consoles (M-200i, M-300, M-380, M-400, M-480): own mixing/patching and
+typically master their REAC links. Exact ports and rate options are model-
+specific. For example Roland specifies 44.1/48 kHz for the M-480; the REAC
+protocol's 96 kHz capability does not upgrade an M-480 to 96 kHz. [R1]
+
+M-5000/M-5000C: a separate console generation; FreeREAC reports M-5000 work at
+96 kHz. Its remote patch-control surface must not be assumed identical to the
+older V-Mixers. [F1, F13, R5]
+
+S-1608: 16 analogue inputs / 8 analogue outputs. S-0808: 8/8. S-4000S-3208:
+32/8 configuration of the modular family. These are the best-documented box
+families in the inspected FreeREAC sources. A generic S-4000S label is not a
+substitute for knowing its installed modules. S-4000H and S-4000M introduce
+additional inventory/placement questions. [R2; F2, F3]
+
+S-4000M: merge unit; Roland describes combining up to four Digital Snake heads
+so the upstream master sees one REAC slave unit. It performs an audio/control
+aggregation function. A normal Ethernet switch does not implement that job.
+[R3]
+
+M-48: personal mixer taking 40 sources into 16 assignable stereo groups. Those
+groups are a user-mixing feature, not the REAC frame's channel count. Its own
+control/monitoring features need separate study. [R1, R4]
+
+R-1000: dedicated multichannel record/playback integration; Roland's M-480 page
+describes up to 48 channels with it. That does not change the per-link 40-slot
+REAC geometry. REAC port modes and routing for an R-1000-like software endpoint
+remain a device-specific follow-up. [R1]
+
+S-MADI: format bridge between MADI and REAC. Splitters/distributors such as
+S-4000D and extenders such as S-4000-SP solve distribution or cable-extension
+tasks. Embedded Power is a separate device-power capability; an ordinary PC
+Ethernet port must not be assumed to supply it. [R6, R7]
+
+4.3 What a recording computer can actually see
+
+An ordinary switch forwards unicast stagebox returns toward their destination;
+promiscuous capture on another port does not force the switch to copy them.
+A mirrored port or suitable tap is needed to observe that traffic directly.
+Broadcast reception instead exposes the slots the master broadcasts. Their
+contents depend on the console patch; they are not automatically the raw
+stagebox microphone channels. [F1; INFERENCE from Ethernet forwarding]
+
+For a first design, choose explicitly between recording a deliberately patched
+console broadcast and observing both link directions. Keep REAC A and B as
+separate segments, including separate counters and clock domains until proven
+otherwise. One master per segment; one VLAN is not an audio merge operation.
+
+5. WIRE FORMAT AND SAMPLE DECODING
+
+5.1 Canonical untagged frame
+
+The following offsets are measured from the destination MAC, excluding Ethernet
+preamble and FCS. They describe the normal full-width console broadcast.
+[CODE: F3, F5, F6, O2, W2]
+
+  Byte offset   Length   Meaning
+  0             6        Destination MAC
+  6             6        Source MAC
+  12            2        EtherType bytes 88 19
+  14            2        Sequence counter, little-endian uint16
+  16            2        Frame-type byte pair
+  18            32       Multiplexed control block
+  50            1440     Audio: 40 channels x 12 samples x 3 bytes
+  1490          2        End marker C2 EA
+  Total         1492     Bytes excluding FCS
+
+For a clean frame carrying n channels, the structural rule is:
+  frame_length = 52 + 36*n
+
+Common stagebox-return geometries are 340 bytes for 8 channels, 628 for 16,
+and 1204 for 32. The current upstream parser accepts even widths from 2 to 40.
+A 1492-byte frame therefore cannot, by length alone, prove that its sender is a
+console: a full-width box is also possible. Actual transmitted width can differ
+from a box's nominal inventory in special box-to-box/merge configurations. [F6]
+
+5.2 Frame types
+
+  00 00  FILLER: still carries audio; exempt from control-block checksum.
+  CD EA  CONTROL: control-message multiplex alongside audio.
+  CF EA  MASTER_ANNOUNCE: includes master identity and rate class.
+  CE EA  SPLIT_ANNOUNCE: historical split path.
+  C2 EA  ENDING type in the historical split path; distinguish this type word
+         from the identical byte pair used as the frame's final marker.
+
+The first three appear in the sampled captures examined here. The split path
+is documented from older code; do not treat every historical split transition
+as independently verified on current equipment. [F1, P2; CHECKED]
+
+5.3 Audio packing
+
+Samples use a channel-pair byte braid, not a straightforward sequence of
+three little-endian bytes for every adjacent channel. Current libreac and
+Norihiro's OBS decoder agree on this layout. [F5, O2, W2]
+
+For zero-based channel ch and time index s (0..11), let:
+  g = 3 * (s*n + (ch with its lowest bit cleared))
+
+Relative to the AUDIO REGION, the little-endian sample bytes are:
+  even ch: low = audio[g+3], middle = audio[g],   high = audio[g+1]
+  odd ch:  low = audio[g+4], middle = audio[g+5], high = audio[g+2]
+
+Then sign-extend bit 23 and divide by 8388608 for normalized float audio.
+The valid signed integer range is -8388608 through 8388607.
+
+Byte unpacking and physical input mapping are separate tests. The protocol
+prose explicitly leaves an upstream physical-channel permutation unresolved.
+Some implementation comments imply a settled layout; this settles byte
+packing, not necessarily which socket is displayed as channel 1. [F1, F5]
+
+5.4 Capture normalization and validation
+
+Parse the actual capture link type, Ethernet tags and source/destination before
+using fixed offsets. A single 802.1Q tag shifts the untagged offsets by four;
+stacked tags require a real parser. NIC offload may present VLAN information
+outside the captured bytes. Do not assume one capture path's representation.
+
+Compare caplen with origlen. A truncated record cannot prove a complete audio
+frame or a trailing marker. FreeREAC documents a +2-byte capture residue on
+some paths; normalize it only after validating its context. It is not a REAC
+field and must not be transmitted as such. [F1, F6, F15]
+
+Separate state by source MAC and segment/VID. For ordered frames of one stream:
+  missing = (current_counter - previous_counter - 1) mod 65536
+
+Classify duplicates and reordering BEFORE interpreting that expression as
+loss. Otherwise a duplicate can look like 65535 missing packets. Distillation,
+mirroring and capture loss must be distinguished from loss on the REAC link.
+
+6. RATE, CLOCK AND NETWORK BUDGET
+
+Each frame carries 12 time samples per channel. Therefore:
+
+  Sample rate    Packets/second    Nominal packet period
+  44100 Hz       3675              272.1088 microseconds
+  48000 Hz       4000              250 microseconds
+  96000 Hz       8000              125 microseconds
+
+The packet geometry remains the same; 96 kHz doubles packet frequency relative
+to 48 kHz. This is not the channel-halving rule used by some other formats.
+
+There is also explicit nominal-rate signalling. Current master construction
+and grammar use paceCode = 0 for 48 kHz, 1 for 96 kHz, 2 for 44.1 kHz.
+In the master announce this is control block data[17], absolute frame byte 35,
+or byte 19 relative to the CF EA type word. These coordinate systems explain
+several apparently different offsets in the sources. The scene's revision
+also carries a rate class; some firmware requires agreement. [F3, F7]
+
+Measure cadence as well as decoding the rate class. A configured byte cannot
+prove actual scheduling, and counting mirrored records can double the result.
+Nominal rate, observed packet cadence, recovered hardware sample clock and
+PipeWire/ASIO/CoreAudio clock must be tracked independently.
+
+[CHECKED arithmetic] For a 1492-byte frame, add 24 bytes of Ethernet wire time
+(8 preamble/SFD, 4 FCS, 12 inter-frame gap), without adding the Ethernet header
+again. Full-width one-direction occupancy is:
+  44.1 kHz: 44.5704 Mbit/s
+  48 kHz:   48.5120 Mbit/s
+  96 kHz:   97.0240 Mbit/s
+
+These exclude VLAN/tunnel overhead. Full duplex has separate directional
+budgets. A trunk's capacity depends on its actual traffic topology; do not
+turn a rough per-segment count into a universal switch limit.
+
+[INFERENCE] A DAW buffer smooths host delivery but cannot by itself repair an
+incorrect physical REAC transmit cadence. Long-duration clock drift is also
+different from short-term packet jitter. The proposed adapter must either
+follow the REAC clock or bridge clock domains deliberately, typically with
+controlled resampling. A 50 ppm mismatch at 48 kHz accumulates 2.4 samples per
+second, enough to exhaust a 480-sample margin in about 200 seconds.
+
+FreeREAC's transport includes real-time pacing and ETF/SO_TXTIME support;
+actual egress performance depends on the host, NIC, kernel and configuration.
+Its implementation is evidence of an approach, not a latency guarantee for
+our future computer. [F9, F10, F11]
+
+7. ESTABLISHMENT AND CONTROL LIFECYCLE
+
+The useful conceptual sequence is link detection, peer discovery, exchange of
+join/readiness records, provisioning, grant/acknowledgement, settling, then
+continuous audio plus control traffic. Disconnect/reboot is another lifecycle
+transition, not merely a pause in the sample stream. [F2, F8]
+
+The project describes a box flooding briefly at link-up, then sending join and
+ready DT1 records toward a master. The master answers records and supplies
+configuration/grant information. Inventory announcements can be post-commit
+reports rather than initial greetings. Firmware/model variations make a
+single hard-coded delay or captured packet sequence a poor general solution.
+
+CONTROL's leading bytes must be parsed as fields: class/link, fragment flags,
+big-endian record length and subtype/opcode. Historical names such as 0103
+combine more than one field. The declaration's 0010 is a record length, not
+a universal inventory-message opcode. Current reac_ports_parse checks the
+opcode at block[4]. [F3, F8]
+
+Scene/configuration transfer is described as an 8904-byte body split across
+start, continuation and final messages. The stagebox commits configuration
+after validation; head-amp writes sent too early may be overwritten. Study
+scene transfer, inventory and parameter replay together. [F2, F7]
+
+Protocol-layer checksums:
+  Outer 32-byte control block: sum of all bytes must be 0 modulo 256.
+  Inner DT1 record: current code constructs a 7-bit checksum so the covered
+  record bytes including checksum sum to 0 modulo 128.
+  FILLER is exempt from the outer checksum rule.
+
+Compute the inner checksum before the enclosing block checksum. Preserve raw
+bytes and message boundaries when analysing fragmented DT1 records. Do not
+extend the old sum-to-0x80 modulo-256 wording to arbitrary records. [F7]
+
+The software must keep transmitting cadence-preserving audio/filler while
+performing control work. Audio output underrun, missing peer heartbeat,
+physical link loss and a new device identity require distinct handling.
+
+8. HEAD-AMPS, PATCHING AND STATE OWNERSHIP
+
+The inspected stagebox-control family uses DT1 tag 0x0101 and parameters:
+  0x00: phantom power, values 0/1.
+  0x01: input pad, values 0/1.
+  0x02: sensitivity, values 0x00..0x37.
+
+For the documented boxes, the implemented sensitivity law is:
+  sensitivity_dBu = -10 - value + (20 if pad enabled, otherwise 0)
+
+Thus value 0x20 is -42 dBu with pad off. Sensitivity is an input-level scale;
+more negative means greater amplification. It must not be displayed as if it
+were a conventional gain value with the same sign. [F7]
+
+The head-amp address is not an audio slot or console strip. Current code reads
+a base from config-announce block[7] multiplied by 16, then addresses individual
+inputs from that base. Captured examples reported by the project are S-0808
+base 0, S-1608 base 32, and S-4000S base 0. The S-4000H remains an explicit
+exception/open case; do not generalize this rule to every model. [F3, F8]
+
+The project reports no direct head-amp readback/ACK on this page. A sent command,
+a software cached value, a console display and an actual analogue change are
+four different kinds of evidence. Reconnection requires restoration of intended
+state after provisioning. Physical phantom-voltage verification is explicitly
+listed as unfinished in the protocol notes. [F1, F2]
+
+For the investigated boxes, pad, phantom and sensitivity are pre-converter
+functions. Console EQ, pan, fader and other DSP controls do not become these
+three REAC commands. Wider statements about all Roland devices require their
+own documentation and captures.
+
+A box in master mode has a different control path in the project observations:
+head-amps are managed out of band through its serial/RCS path. Do not promise
+REAC head-amp control merely because audio from that box can be received. [F2]
+
+9. CONTRADICTIONS AND IMPLEMENTATION TRAPS
+
+9.1 Audio offset: 54 versus 50
+    ManuKapel README says 54. reac_decoder.h calculates 14+2+2+32 = 50.
+    OBS and libreac also use 50 for untagged Ethernet. A VLAN tag would shift
+    offsets, but ManuKapel's checked decoder expects EtherType at byte 12;
+    its README claim does not implement VLAN support. Use the code-supported
+    untagged value and parse tags explicitly. [W1, W2, O2, F5]
+
+9.2 Inner checksum
+    Protocol prose still describes sum == 0x80 modulo 256. Newer libreac's
+    reac_ctrl_record_cksum_stamp uses (128 - (sum & 127)) & 127, with a comment
+    explaining a longer-record failure of the old rule. Treat this as a
+    versioned correction, and add long-record vectors before implementing
+    identity/name messages. Our capture sample checked outer checksums only.
+
+9.3 Rate signalling
+    Several READMEs claim there is no rate field. gen_cfea, the grammar and
+    detailed protocol prose identify one. Use both rate-class signalling and
+    observed cadence; do not retain the blanket no-field claim. [F3, F7]
+
+9.4 Head-amp base and model coverage
+    wire-format.md retains a heading claiming width determines the base,
+    while nearby text and current code reject a width lookup in favour of the
+    announced strap. protocol-facts.yaml then records unresolved S-4000H
+    behaviour inconsistent with a universal strap-only rule. Use tested model
+    evidence, and keep unsupported cases explicit. [F1, F3, F8]
+
+9.5 Automatic reac-pw role
+    Parts of the README say an existing desk is joined as slave; other parts
+    say it is tapped. src/main.c's segment_defers_as_tap and its caller make
+    automatic operation defer to a detected desk as a passive tap. An explicit
+    slave/box intent follows another path. The README also records that an
+    active software slave can block a real box's re-enrolment. For initial
+    capture, pin tap behaviour rather than rely on a prose summary. [F11, F12]
+
+9.6 Passive is not automatically complete
+    A tap can only decode frames delivered to its capture port. Broadcast
+    recording and raw stagebox-input capture are not interchangeable. Record
+    exact tap location and console patch with every capture.
+
+9.7 Width and channel identity
+    The downstream console fabric has 40 slots; a stagebox return need not.
+    Frame length alone cannot establish sender role when a 40-input return is
+    allowed. A decoded channel number is not yet a verified socket number.
+
+9.8 Documentation coverage
+    Some README links lead to files absent from the checked trees, including
+    referenced historical control-plane/validation documents. The public site
+    also differs from newer package/service instructions. Keep source SHA and
+    exact path together; do not reconstruct missing documents from their titles.
+
+9.9 Capture corpus
+    Distilled/truncated/mirrored captures cannot be treated as continuous,
+    complete, loss-free recordings. Full-corpus claims in project prose were
+    not reproduced in this review. Their private/raw evidence remains external.
+
+10. PRACTICAL DAW INTEGRATION PATHS
+
+Path A — recording only
+  Receive a known console broadcast or a correctly mirrored link, decode and
+  validate it, then expose multichannel input. Linux: study reac-pw tap mode.
+  Windows/macOS: study ManuKapel's adapter design, with explicit clock, packet
+  validation and reliability work. This is the narrowest first milestone.
+
+Path B — DAW playback/virtual soundcheck into a Roland console
+  Requires an active REAC endpoint accepted by the console, correctly paced
+  upstream samples, declared inventory, routing and reconnect behaviour. A
+  split recorder or local waveOut output does not implement it. Prefer a
+  dedicated test segment or deliberately allocated console port for this work.
+
+Path C — computer directly drives a stagebox
+  The computer becomes master and must provide timing, provisioning, control
+  state and downstream audio. FreeREAC's master path is the most relevant
+  reference. Exact box model/firmware, physical mapping and analogue controls
+  must be verified together.
+
+Path D — console as a DAW control surface
+  Faders, mutes, transport, meters, track names and feedback need a separate
+  console-control investigation. REAC audio support is not sufficient.
+
+Suggested software boundaries [INFERENCE]:
+  capture/normalization; pure codec; per-segment control state; pacing/clock
+  management; audio buffering and clock-domain bridge; OS audio backend;
+  independent console remote-control adapter; mapping and diagnostics.
+
+Preserve an offline pcap path throughout development. It allows codec and
+control regressions to be investigated without using the live rig.
+
+11. CHECKS ACTUALLY PERFORMED
+
+11.1 Source review
+  Compared audio-header arithmetic and braid mapping across the inspected
+  libreac, OBS and ManuKapel code. Checked the current inner-checksum function,
+  head-amp base parser, rate-byte generation, passive-role decision, ASIO timing
+  loop and ring-buffer policy. Checked reaccapture's fixed WAV sample rate.
+
+11.2 Public capture spot check
+  Read the first 20,000 classic-pcap records from each of:
+  - m200-enrol-441k-2026-09-13/enrol-bounce-slice.pcap
+  - box-to-box-2026-09-13/enrol-main-port-slice.pcap
+  - merge-s4000m-2026-09-13/merge-direct-reacpw-slice.pcap
+  Repository revision: see reac-captures in Section 13.
+
+  Total examined: 60,000 records; 42,773 had captured length below original
+  length. REAC types observed: 0000, CDEA and CFEA. All 358 examined non-filler
+  REAC control blocks passed the outer 32-byte modulo-256 checksum check.
+  This does not verify the inner DT1 checksum or successful device operation.
+
+  Example original untagged lengths included 1492/1494, 628/630 and 340/342;
+  the +2 patterns are consistent with the project's capture-residue account.
+  Truncated records did not independently establish that residue's contents.
+  No audio-quality, physical-map or packet-loss claim was inferred from them.
+
+11.3 Arithmetic
+  Independently recomputed frame sizes, frame cadence and Ethernet wire-time
+  budgets. No repository test-suite pass or native-driver build is claimed.
+
+12. NEXT EXPERIMENTS AND OPEN QUESTIONS
+
+12.1 Identify the target rig
+  Record console model/firmware, each stagebox/module configuration, available
+  REAC ports and their modes, existing clock source, sample rate, OS version,
+  NIC/chipset/driver, DAW/version, and required channel counts in each direction.
+  Decide whether the first goal is recording, virtual soundcheck, direct box
+  control, DAW surface control, or a combination.
+
+12.2 Establish a wired passive baseline
+  Use a dedicated test connection or mirrored port with known topology. Save
+  full frames, not just headers. Capture normal operation, startup, cable
+  reconnect and a sample-rate change. Store the console patch and physical
+  wiring alongside the pcap, including whether duplicates are introduced.
+  A basic untagged capture filter is ether proto 0x8819; tagged capture needs
+  a filter/parser suited to its actual representation.
+
+  Completion evidence: identified talkers/directions, full frame geometry,
+  bounded loss/reorder/duplicate statistics, rate-class/cadence agreement and
+  a reproducible capture manifest. Keep raw captures unchanged.
+
+12.3 Prove sample decoding and physical mapping
+  Feed a known, modest-level reference into a documented physical input.
+  Verify polarity, amplitude, byte significance and clipping behaviour.
+  Use distinct simultaneous tones or separately identifiable signals to build
+  a physical-socket-to-wire-slot table. Repeat across supported rates and both
+  directions. Compare against a known-good recording path where available.
+
+  Completion evidence: channel map, calibrated levels, expected spectrum and
+  reproducible sample conversion. An audible tone alone is insufficient:
+  an incorrect byte lane can retain a recognizable waveform at a wrong level.
+
+12.4 Prove a DAW receive path
+  Expose the verified channels and record for a proposed initial target of at
+  least one hour under realistic load. Log buffer occupancy, discontinuities,
+  clock estimate, dropped/duplicated frames and DAW xruns. Repeat after DAW and
+  capture restarts. The duration is our proposed test criterion, not a vendor
+  requirement. Extend it to the intended session length before deployment.
+
+12.5 Add active transmission only after reception is understood
+  On the test segment, start with silence and verify peer recognition,
+  declared width, rate agreement and steady pacing. Then use a low-level test
+  signal and measure round-trip latency and jitter. Exercise reconnect,
+  underrun and device restart. Verify that the intended physical output alone
+  receives the signal. Preserve the known-good passive capture for comparison.
+
+12.6 Add preamp control
+  Validate one parameter and one channel at a time. Distinguish transmitted
+  intent from observed response. Check that scene commit/reconnect does not
+  undo settings. Phantom-power testing requires a suitable test load/meter
+  and an intentionally selected input; a GUI indicator is not voltage proof.
+
+12.7 Resolve the remaining device-specific questions
+  - Upstream physical-slot permutation on the target hardware.
+  - S-4000H address-base exception and inventory-cell meaning.
+  - S-4000M merge allocation and downstream output placement.
+  - Which console ports can support the desired playback topology.
+  - Clock lock, drift, reconnection and rate-change behaviour per firmware.
+  - Split versus backup/redundancy behaviour on the selected console.
+  - M-48-specific control and Embedded Power, if those devices are present.
+  - Exact console patch/name/control protocol and DAW feedback requirements.
+  - Modern Windows/macOS distribution, permissions and timing architecture.
+
+Recommended study order:
+  frame/codec -> sample mapping -> clock and loss handling -> passive DAW input
+  -> establishment/scene/inventory -> active playback -> analogue controls
+  -> console remote control and broader device/topology coverage.
+
+13. REVIEWED SOURCE REVISIONS
+
+The following snapshot identifies repository HEADs inspected during this review.
+Dates are commit dates, not release dates or compatibility guarantees.
+
+FreeREAC/reac-protocol
+  Commit: 12db4b6461b4674c983470b32ab47f7512c1fba7
+  Date:   2026-10-07T14:03:40+02:00
+
+FreeREAC/libreac
+  Commit: 55fcc1c70e9f16786ed13b5e8831787f762e45b9
+  Date:   2026-10-11T14:11:01+02:00
+
+FreeREAC/reac-pw
+  Commit: 147c7517d54a71fd931317cd9e941eb620b5ed85
+  Date:   2026-10-11T10:15:22+02:00
+
+FreeREAC/reac-stageboxes
+  Commit: 03d56495528add3cfdea07a88d460c4ba19d08fc
+  Date:   2026-10-11T14:16:54+02:00
+
+FreeREAC/reac-label
+  Commit: 65eb44009c5880e88f5304d15c4f4559d2568cb4
+  Date:   2026-08-23T15:28:27+02:00
+
+FreeREAC/reac-tools
+  Commit: d590ca0ef39819f64f6a992f8f2f5f19213f29a1
+  Date:   2026-10-07T13:06:08+02:00
+
+FreeREAC/reac-analysis
+  Commit: a15492cf071daf64132ce6007ef598af80d84994
+  Date:   2026-10-07T13:07:30+02:00
+
+FreeREAC/reac-captures
+  Commit: 7887cadc5b388f10b2a2a72dddb4c801e61b9fbb
+  Date:   2026-10-07T13:12:20+02:00
+
+FreeREAC/reac-transport
+  Commit: d498fff1c635458e7e93631595b761979cba126e
+  Date:   2026-10-02T15:05:47+02:00
+
+FreeREAC/reac-repacer
+  Commit: 4ea1bbe8a9fcf39fce89c718adab0f2f2f6aff08
+  Date:   2026-10-02T15:05:43+02:00
+
+FreeREAC/reac-docs
+  Commit: 79d4f4f54e6c61634827d7b938581f195a3166dc
+  Date:   2026-09-01T23:57:11+02:00
+
+FreeREAC/reac-lab
+  Commit: a3c621a5b4faffb78e52dfce3d6ddb074d73eb32
+  Date:   2026-10-02T11:21:36+02:00
+
+norihiro/obs-h8819-source
+  Commit: e7138d761e5cb2b83bca32680eb061cb629ea251
+  Date:   2026-03-31T09:02:22+09:00
+
+per-gron/reacdriver
+  Commit: 0bea7782c40c995f51c820448ce9f287eacd3600
+  Date:   2012-07-16T13:52:28+02:00
+
+norihiro/reaccapture
+  Commit: b51910715935d8cbc6ba4db2dd9a31ebfd474958
+  Date:   2023-05-20T16:38:02+09:00
+
+ManuKapel/REAC-driver-Windows-Mac
+  Commit: 811762b65ebe940be7e32d450f87e45688616fb5
+  Date:   2026-05-08T07:55:02+02:00
+
+14. SOURCE REGISTER
+
+The register below uses commit-pinned GitHub links wherever a local source was
+inspected. Vendor references are live URLs checked on the review date.
+
+[F1]
+  FreeREAC/reac-protocol — wire-format.md
+  https://github.com/FreeREAC/reac-protocol/blob/12db4b6461b4674c983470b32ab47f7512c1fba7/wire-format.md
+
+[F2]
+  FreeREAC/reac-protocol — docs/mixer-protocol.md
+  https://github.com/FreeREAC/reac-protocol/blob/12db4b6461b4674c983470b32ab47f7512c1fba7/docs/mixer-protocol.md
+
+[F3]
+  FreeREAC/reac-protocol — spec/reac.ksy
+  https://github.com/FreeREAC/reac-protocol/blob/12db4b6461b4674c983470b32ab47f7512c1fba7/spec/reac.ksy
+  FreeREAC/reac-protocol — spec/protocol-facts.yaml
+  https://github.com/FreeREAC/reac-protocol/blob/12db4b6461b4674c983470b32ab47f7512c1fba7/spec/protocol-facts.yaml
+
+[F4]
+  FreeREAC/libreac — README.md
+  https://github.com/FreeREAC/libreac/blob/55fcc1c70e9f16786ed13b5e8831787f762e45b9/README.md
+
+[F5]
+  FreeREAC/libreac — include/reac/reac_braid.h
+  https://github.com/FreeREAC/libreac/blob/55fcc1c70e9f16786ed13b5e8831787f762e45b9/include/reac/reac_braid.h
+  FreeREAC/libreac — include/reac/reac_sample.h
+  https://github.com/FreeREAC/libreac/blob/55fcc1c70e9f16786ed13b5e8831787f762e45b9/include/reac/reac_sample.h
+  FreeREAC/libreac — src/reac_decode.c
+  https://github.com/FreeREAC/libreac/blob/55fcc1c70e9f16786ed13b5e8831787f762e45b9/src/reac_decode.c
+
+[F6]
+  FreeREAC/libreac — src/reac_upstream.c
+  https://github.com/FreeREAC/libreac/blob/55fcc1c70e9f16786ed13b5e8831787f762e45b9/src/reac_upstream.c
+
+[F7]
+  FreeREAC/libreac — src/reac_ctrlblk.c
+  https://github.com/FreeREAC/libreac/blob/55fcc1c70e9f16786ed13b5e8831787f762e45b9/src/reac_ctrlblk.c
+  FreeREAC/libreac — src/reac_master.c
+  https://github.com/FreeREAC/libreac/blob/55fcc1c70e9f16786ed13b5e8831787f762e45b9/src/reac_master.c
+
+[F8]
+  FreeREAC/libreac — src/reac_ports.c
+  https://github.com/FreeREAC/libreac/blob/55fcc1c70e9f16786ed13b5e8831787f762e45b9/src/reac_ports.c
+  FreeREAC/libreac — src/reac_headamp_tx.c
+  https://github.com/FreeREAC/libreac/blob/55fcc1c70e9f16786ed13b5e8831787f762e45b9/src/reac_headamp_tx.c
+
+[F9]
+  FreeREAC/libreac — transport/src/reac_pacer.c
+  https://github.com/FreeREAC/libreac/blob/55fcc1c70e9f16786ed13b5e8831787f762e45b9/transport/src/reac_pacer.c
+
+[F10]
+  FreeREAC/libreac — docs/ETF-PACING.md
+  https://github.com/FreeREAC/libreac/blob/55fcc1c70e9f16786ed13b5e8831787f762e45b9/docs/ETF-PACING.md
+
+[F11]
+  FreeREAC/reac-pw — README.md
+  https://github.com/FreeREAC/reac-pw/blob/147c7517d54a71fd931317cd9e941eb620b5ed85/README.md
+  FreeREAC/reac-pw — docs/RATE-AND-CLOCK-CONFIG.md
+  https://github.com/FreeREAC/reac-pw/blob/147c7517d54a71fd931317cd9e941eb620b5ed85/docs/RATE-AND-CLOCK-CONFIG.md
+  FreeREAC/reac-pw — docs/NODE-PROPERTIES.md
+  https://github.com/FreeREAC/reac-pw/blob/147c7517d54a71fd931317cd9e941eb620b5ed85/docs/NODE-PROPERTIES.md
+
+[F12]
+  FreeREAC/reac-pw — src/main.c
+  https://github.com/FreeREAC/reac-pw/blob/147c7517d54a71fd931317cd9e941eb620b5ed85/src/main.c
+
+[F13]
+  FreeREAC/reac-label — README.md
+  https://github.com/FreeREAC/reac-label/blob/65eb44009c5880e88f5304d15c4f4559d2568cb4/README.md
+
+[F14]
+  FreeREAC/reac-tools — README.md
+  https://github.com/FreeREAC/reac-tools/blob/d590ca0ef39819f64f6a992f8f2f5f19213f29a1/README.md
+  FreeREAC/reac-analysis — README.md
+  https://github.com/FreeREAC/reac-analysis/blob/a15492cf071daf64132ce6007ef598af80d84994/README.md
+
+[F15]
+  FreeREAC/reac-captures — README.md
+  https://github.com/FreeREAC/reac-captures/blob/7887cadc5b388f10b2a2a72dddb4c801e61b9fbb/README.md
+  FreeREAC/reac-captures — MANIFEST.md
+  https://github.com/FreeREAC/reac-captures/blob/7887cadc5b388f10b2a2a72dddb4c801e61b9fbb/MANIFEST.md
+
+[F16]
+  FreeREAC/reac-transport — README.md
+  https://github.com/FreeREAC/reac-transport/blob/d498fff1c635458e7e93631595b761979cba126e/README.md
+  FreeREAC/reac-repacer — README.md
+  https://github.com/FreeREAC/reac-repacer/blob/4ea1bbe8a9fcf39fce89c718adab0f2f2f6aff08/README.md
+  FreeREAC/reac-docs — README.md
+  https://github.com/FreeREAC/reac-docs/blob/79d4f4f54e6c61634827d7b938581f195a3166dc/README.md
+  FreeREAC/reac-lab — README.md
+  https://github.com/FreeREAC/reac-lab/blob/a3c621a5b4faffb78e52dfce3d6ddb074d73eb32/README.md
+
+[P1]
+  per-gron/reacdriver — README.md
+  https://github.com/per-gron/reacdriver/blob/0bea7782c40c995f51c820448ce9f287eacd3600/README.md
+
+[P2]
+  per-gron/reacdriver — REACSplitDataStream.cpp
+  https://github.com/per-gron/reacdriver/blob/0bea7782c40c995f51c820448ce9f287eacd3600/REACSplitDataStream.cpp
+
+[O1]
+  norihiro/obs-h8819-source — README.md
+  https://github.com/norihiro/obs-h8819-source/blob/e7138d761e5cb2b83bca32680eb061cb629ea251/README.md
+
+[O2]
+  norihiro/obs-h8819-source — src/capdev-proc.c
+  https://github.com/norihiro/obs-h8819-source/blob/e7138d761e5cb2b83bca32680eb061cb629ea251/src/capdev-proc.c
+
+[N1]
+  norihiro/reaccapture — README.md
+  https://github.com/norihiro/reaccapture/blob/b51910715935d8cbc6ba4db2dd9a31ebfd474958/README.md
+
+[N2]
+  norihiro/reaccapture — src/reaccapture.cc
+  https://github.com/norihiro/reaccapture/blob/b51910715935d8cbc6ba4db2dd9a31ebfd474958/src/reaccapture.cc
+
+[W1]
+  ManuKapel/REAC-driver-Windows-Mac — README.md
+  https://github.com/ManuKapel/REAC-driver-Windows-Mac/blob/811762b65ebe940be7e32d450f87e45688616fb5/README.md
+
+[W2]
+  ManuKapel/REAC-driver-Windows-Mac — src/reac_decoder.h
+  https://github.com/ManuKapel/REAC-driver-Windows-Mac/blob/811762b65ebe940be7e32d450f87e45688616fb5/src/reac_decoder.h
+  ManuKapel/REAC-driver-Windows-Mac — src/reac_decoder.cpp
+  https://github.com/ManuKapel/REAC-driver-Windows-Mac/blob/811762b65ebe940be7e32d450f87e45688616fb5/src/reac_decoder.cpp
+
+[W3]
+  ManuKapel/REAC-driver-Windows-Mac — macos/ReacAudioServerPlugin/README.md
+  https://github.com/ManuKapel/REAC-driver-Windows-Mac/blob/811762b65ebe940be7e32d450f87e45688616fb5/macos/ReacAudioServerPlugin/README.md
+
+[W4]
+  ManuKapel/REAC-driver-Windows-Mac — macos/ReacAudioServerPlugin/ReacAudioServerPlugin.cpp
+  https://github.com/ManuKapel/REAC-driver-Windows-Mac/blob/811762b65ebe940be7e32d450f87e45688616fb5/macos/ReacAudioServerPlugin/ReacAudioServerPlugin.cpp
+
+[W5]
+  ManuKapel/REAC-driver-Windows-Mac — src/reac_asio_driver.cpp
+  https://github.com/ManuKapel/REAC-driver-Windows-Mac/blob/811762b65ebe940be7e32d450f87e45688616fb5/src/reac_asio_driver.cpp
+  ManuKapel/REAC-driver-Windows-Mac — src/reac_ring_buffer.cpp
+  https://github.com/ManuKapel/REAC-driver-Windows-Mac/blob/811762b65ebe940be7e32d450f87e45688616fb5/src/reac_ring_buffer.cpp
+
+[R1] Roland M-480 specifications and system overview
+  https://proav.roland.com/global/products/m-480/
+
+[R2] Roland S-1608 product overview
+  https://proav.roland.com/global/products/s-1608/
+
+[R3] Roland S-4000M merge-unit description
+  https://proav.roland.com/global/products/s-4000m/support/
+
+[R4] Roland M-48 specifications
+  https://proav.roland.com/global/products/m-48/
+
+[R5] Roland M-5000 / OHRCA overview
+  https://proav.roland.com/global/ohrca/
+
+[R6] Roland S-MADI overview, including Embedded Power
+  https://proav.roland.com/global/products/s-madi/support/
+
+[R7] Roland S-4000-SP manual; cable-extension/split description
+  https://proav.roland.com/assets/media/pdf/s4000sp_manual_e1.pdf
+
+15. CHANGE LOG AND CONTINUATION TEMPLATE
+
+2026-10-17 — v0.1: first source-based notebook; five requested project groups
+reviewed; exact commits recorded; decoding/control contradictions logged;
+bounded public-pcap checks completed; hardware validation plan created.
+
+For each future finding, append:
+  Date and experiment ID:
+  Hardware / firmware / OS / NIC / DAW:
+  Exact software commits:
+  Topology, REAC roles, rate and console patch:
+  Capture name, SHA-256, link type, snap length and capture position:
+  Expected result:
+  Observed wire result:
+  Observed audio / physical result:
+  Evidence label and confidence:
+  Contradictions / alternative explanations:
+  Conclusion, remaining question and next discriminating test:
+
+END OF VERSION 0.1
+
+
+16. USER CAPTURE EVIDENCE — 25 OCTOBER 2026
+
+REAC CAPTURE STUDY — 25 OCTOBER 2026
+Target: M-400 + S-1608, Windows, FL Studio, eventual 40 x 40 mono transport
+
+SCOPE AND EVIDENCE
+
+This study reads the attachments supplied in this conversation. It does not
+transmit packets, run the attached executable, install a driver, or test a live
+device. Capture filenames are experiment labels, not proof of device roles.
+The Windows project visible in the screenshot was not supplied as source code.
+
+Fourteen PCAPNG files were scanned completely: 1,442,733 packet records,
+including 1,442,426 normally framed EtherType 0x8819 records. All fourteen
+files passed block-boundary/footer validation. No packet record had caplen
+below original length. That does not establish loss-free acquisition or valid
+contents in every record. Twenty-nine additional records have a reproducible
+two-byte Ethernet-header defect and are listed separately below.
+
+The available capture metadata identifies Ethernet link type 1, a 262144-byte
+snap length and nanosecond timestamp units. The meres47 metadata records
+Windows 10 22H2 build 19045, Dumpcap 4.6.6 and an Intel Core i7-3770 CPU.
+These describe the capture host at recording time, not necessarily the current
+target system. The NIC chipset is not identified by the generic name Ethernet.
+The capture timestamps place the research series on 21 May 2026, meres47 on
+1 June 2026 and meres50 on 4 June 2026. Analysis date is 25 October 2026.
+
+Missing attachments, not inspected:
+  meres48-48khz.pcapng
+  meres48-96khz.pcapng
+  meres49.pcapng
+
+The file opera.exe has PE version metadata ProductName/FileDescription
+"Opera Internet Browser", version 137.0.6036.63. It is not the project source
+and was not executed. The Explorer screenshot shows D:\Windows Reac ASIO,
+including src, tools, docs, external, ASIOSDK and build directories. Their
+contents are not accessible through a screenshot. A source ZIP is required
+for an actual legacy-code review; the legacy project is for lessons only.
+
+1. TALKERS AND A NECESSARY QUALIFICATION
+
+M = 00:40:ab:c4:9c:0a, the console-associated source.
+S = 00:40:ab:c4:7c:09, the stagebox-associated or emulated source.
+
+M emits master announcements and configuration traffic. S advertises an S-1608
+style 16-input/8-output declaration in two recordings. This supports the role
+labels, but a MAC address cannot prove that a physical device, rather than
+software using its identity, generated a frame. The old transmitter's running
+state and any MAC impersonation must be recorded before making that attribution.
+
+The two directions appear together only in meres47.pcapng and meres50.pcapng.
+The other recordings expose one of these sources. Lack of the opposite stream
+at that capture point is not proof that it did not exist elsewhere.
+
+2. FRAME GEOMETRY: THE M-400 PATH IS NOT ALWAYS FORTY CHANNELS
+
+Normally framed REAC records validate with the known 50-byte untagged audio
+offset and final C2 EA marker. No VLAN tag or extra trailing bytes are needed
+for these records. The geometries observed are:
+  340 bytes:   8 channels x 12 samples x 3 bytes, plus 52 framing bytes.
+  628 bytes:  16 channels x 12 samples x 3 bytes, plus 52 framing bytes.
+ 1492 bytes:  40 channels x 12 samples x 3 bytes, plus 52 framing bytes.
+
+Source M uses both 340 and 1492 bytes. For example, reac_tx_research3 is
+entirely 340-byte frames, yet it contains CFEA master announcements and scene
+traffic. Thus a 340-byte frame does not by itself identify a stagebox.
+Do not discard shorter console frames or treat them as corrupt 1492-byte audio.
+Keep session role, current geometry and configured capability separate.
+
+In meres47, M changes 340 -> 1492 around +3.244 s, returns to 340 around
++11.914 s, changes to 1492 around +14.862 s, and repeats later. In meres50,
+several such changes are separated by roughly 200 ms capture-time gaps.
+Whether these are intended restarts, session failure or a capture-path effect
+requires the experiment log. They do not constitute sustained 40 x 40 proof.
+
+3. A VERIFIED WIRE-SLOT RELATIONSHIP IN MERES47
+
+The 16-channel S stream was compared against every even-aligned 16-channel
+window in the 40-channel M stream. Entire 12-sample blocks were compared as
+bytes, using SHA-256 keys; completely silent upstream blocks were excluded.
+
+Result: 6,908 downstream blocks exactly match upstream blocks at downstream
+slots 9-24, and no other tested starting position produced a match.
+There were 92,960 unique non-silent upstream blocks and 89,466 full-width
+downstream frames in the comparison.
+
+Example: packet 19,381 upstream matches slots 9-24 of packet 19,388 downstream.
+Their capture timestamps differ by about 0.753 ms. This is a capture-point
+observation, NOT an ADC/DAC or DAW round-trip latency measurement.
+
+The upstream signal-bearing slots in this file are 1-4; slots 5-16 are zero.
+Therefore the nonzero evidence supports upstream 1-4 mapping to downstream
+9-12. The full 16-slot block alignment is demonstrated, but twelve silent slots
+cannot independently establish twelve physical socket identities.
+
+This pattern is consistent with the previously documented REAC A/SPLIT layout
+of eight console outputs followed by stagebox inputs. It is evidence for that
+interpretation, not proof of which physical console connector was tapped.
+The result does not validate REAC B's separate 40-return path.
+
+4. CLOCK EVIDENCE AND WHY FILENAME RATE LABELS ARE INSUFFICIENT
+
+M's CFEA pace byte is 2 in meres47 and meres47-m400-s1608-1-2return.
+Under the pinned FreeREAC interpretation this announces 44.1 kHz.
+In the latter file a long uninterrupted 1492-byte run is about 3674.85 frames/s,
+which independently agrees with 44.1 kHz at twelve samples per frame.
+
+M's pace byte is 0 in meres50 and the earlier research-series console files,
+corresponding to 48 kHz. Clean runs in the research series are about 4000/s.
+
+S alone in meres47-s1608-slave-1-2return averages about 7973 frames/s, with
+uninterrupted segments near 8000/s. In meres50, S also has long segments near
+8000/s while M announces 48 kHz. Sequence counters advance, so this is not
+simply two identical captured copies of every packet.
+
+Under the twelve-sample format, 8000 packets/s corresponds to a nominal
+96 kHz transport cadence. This does not prove a particular physical device's
+ADC sample rate or establish why that cadence was chosen. If M and S are the
+two ends of one segment in meres50, their observed rates are inconsistent and
+must be investigated before evaluating audio quality or increasing width.
+
+Packet-arrival timestamps are visibly batched on this Windows capture path.
+For example, meres50's S stream has a roughly 10-microsecond median recorded
+inter-arrival time despite its much lower long-run mean rate. These timestamps
+must not be treated as precise Ethernet egress jitter measurements. Segment
+rates, sequence progression, capture pauses and the announced rate must all
+be considered together. No ppm accuracy claim is made from these captures.
+
+5. DECLARATION, ACTUAL WIDTH AND CONTROL RECORDS DISAGREE
+
+In meres47 and meres50, S sends the same inventory block:
+  010300108200000202020202010103030303030300000000000000000000004c
+
+Using the pinned libreac port-table parser, this is 16 inputs, 8 outputs and
+headamp address base 32. The declaration appears 19 times in meres47 and
+13 times in meres50.
+
+In meres47, S's 628-byte audio agrees with sixteen upstream channels.
+In meres50, all S REAC frames are 340 bytes, corresponding to only eight
+upstream channels, despite the 16-input declaration. This is a concrete
+inventory-versus-payload inconsistency to explain. It is not a useful precedent
+for simply advertising forty inputs while sending an arbitrary frame width.
+
+All 8,683 examined non-filler control blocks pass the outer modulo-256 checksum.
+All 764 complete SINGLE DT1 containers found by the analysis pass the inner
+modulo-128 checksum and have their terminator at the declared SysEx endpoint.
+Neither result proves semantic validity or successful enrolment.
+
+One repeated S message in meres47 and meres50 has this block:
+  04030013000200fe0ff0410a000012120000030000007df70000000000000001
+
+Its outer record length is 0x13 (19), but its declared SysEx length is 0x0f
+(15). Under the inspected container grammar, outer length should equal the
+SysEx length plus five, i.e. 20 in this case. There are 32 such occurrences:
+19 in meres47 and 13 in meres50. First examples are packets 18,555 and 98,188.
+The source's other SINGLE DT1 records and the console's corresponding 15-byte
+records have the consistent length 20.
+
+This message targets DT1 address 00000300. It is not the pinned FreeREAC
+box-ready record at 03020001. No complete SINGLE DT1 address beginning 0302
+was observed in this corpus. Do not call a message "ready" merely because a
+code variable or record length contains 0013. Whether a ready message is
+required at the captured stage, or whether this trace contains an older
+emulator's substitute, remains open. Do not blindly replace the address without
+first establishing the intended message and the M-400's response.
+
+M sends headamp-page 0101 writes at addresses based on 0x20: 144 such records
+in meres47 and 288 in meres50. Their presence supports the inferred inventory
+address base and shows why analogue-control handling must be distinguished
+from audio-slot routing. It does not prove physical gain/phantom changes.
+
+6. RECONNECT PATTERNS, COUNTERS AND CAPTURE DAMAGE
+
+S repeats a five-message control sequence including a zero-filled CDEA block,
+inventory, a join-like DT1 record, the length-inconsistent DT1 record and a
+heartbeat-shaped record. It occurs 19 times in meres47 and 13 in meres50.
+Some sequences interleave with broadcast frames using nearby counter values.
+This makes a simple whole-file counter subtraction a poor loss estimator.
+Reordering, resets, mixed transmission paths and actual capture loss need
+separate treatment. The JSON field forward_gap_slots is a diagnostic count,
+not a claim that that many audio frames were lost on the wire.
+
+Twenty-nine records have this specific defect:
+- Their stored Ethernet destination begins with four FF bytes instead of six.
+- The Roland source MAC follows immediately; 8819 appears at raw byte 10,
+  two bytes earlier than the normal EtherType position.
+- The file's stored original and captured lengths are both two bytes short:
+  338 or 1490 instead of 340 or 1492.
+- The normal C2 EA tail remains present.
+
+Counts:
+  meres47.pcapng:                         9
+  meres47-m400-s1608-1-2return.pcapng:     2
+  meres50.pcapng:                        18
+
+For example, meres47 packet 18,969 starts:
+  ffffffff0040abc49c0a88198aee...
+This explains why a strict Ethernet parser reports an unrelated EtherType.
+An offline diagnostic can test a hypothetical missing FF FF prefix, but the
+raw files must remain unchanged. This study lists candidates separately and
+does not silently insert reconstructed bytes into normal audio statistics.
+
+These are missing header bytes, not the +2 trailing residue mentioned in the
+earlier public-corpus notes. A global "strip two bytes" rule would be wrong.
+The recordings do not identify the origin of the defect. The available
+Dumpcap interface statistics report zero drops; that does not exclude packet
+loss upstream of the capture mechanism or malformed records supplied to it.
+
+The four Kevero research files also contain two large sequence jumps of roughly
+5460-5465 steps, paired with approximately 1.36-second timestamp gaps. Their
+whole-file averages near 2830 packets/s therefore do not represent a new REAC
+sample rate. Long uninterrupted runs still measure approximately 4000/s.
+
+7. WHAT THE ROLE-NAMED FILES ACTUALLY SHOW
+
+reac_tx_research4Slave, 5Split and 6Master each contain only S-originated
+broadcast filler frames, at about 4000/s, using the 340-byte geometry.
+Their sequence counters are contiguous throughout each approximately
+ten-second file. There are no captured control messages proving successful
+slave enrolment or a distinct split negotiation in those files.
+
+These are useful steady-stream fixtures. They are not three independently
+verified protocol-state transitions. Record switch position, power-cycle
+history, cable topology and whether software was transmitting for each file.
+
+8. CONSEQUENCES FOR THE WINDOWS / FL STUDIO DESIGN
+
+The existing recommendation remains a hypothesis to validate: keep the real
+S-1608 on M-400 A and develop the PC as a slave on the separate B port.
+The 40-input virtual-box plus full-downstream-capture workaround remains
+unproven on this M-400. This corpus contains no 40-input slave declaration,
+no 40-channel upstream stream attributed to S, and no demonstrated ASIO link.
+
+Required implementation lessons from this corpus:
+- Parse geometry per frame; do not classify device role by length alone.
+- Keep advertised inventory and actual upstream width coherent.
+- Follow the console's clock and react to changes in announced rate.
+- Model control state and DT1 addresses, not just recorded packet templates.
+- Validate both length fields as well as both checksums.
+- Separate stable runs, reconnects, source identity collisions and capture
+  anomalies when evaluating continuity.
+- Retain capture replay and diagnostic counters as development facilities.
+
+The old project should be studied for its failure modes and assumptions.
+It is not being adopted as the implementation base, consistent with the user's
+instruction. Its source is still needed to attribute the observed patterns
+to particular code paths rather than speculate from packets.
+
+9. NEXT DISCRIMINATING WORK
+
+First, obtain a labelled reference capture of known-good M-400/S-1608 hardware
+without the old transmitter running. Record A/B/SPLIT cabling, mirror/tap
+position, firmware, sample rate, switch setting and the test signal routing.
+Then compare an emulator run using the same setup and deliberate test signal.
+This separates genuine hardware variation from software-produced identities.
+
+For the missing source review, upload a ZIP containing README, src, tools, docs,
+CMakeLists.txt and Visual Studio project files. The project-specific dependency
+versions are useful; built executables and build caches are unnecessary for
+the initial review. Relevant project-local guidance can accompany the source.
+
+Investigate meres50's width/rate discrepancy and the repeated DT1 length
+inconsistency before attempting 40-channel transmission. Reconstruct the
+M-400 scene/grant sequence and distinguish periodic reconfiguration from
+unsuccessful re-enrolment. This first pass did not reconstruct complete scenes
+or prove the full control state machine.
+
+Finally, perform a controlled 40-input virtual endpoint test on B and verify
+actual console input availability, all forty return slots and sustained clock
+lock before integrating a Windows ASIO backend. Physical socket mapping needs
+documented, distinguishable signals; silent channels are insufficient evidence.
+
+10. REPRODUCIBILITY AND LIMITATIONS
+
+analyze_captures.py produces capture_inventory.json and per-capture JSON with
+SHA-256, source/destination counts, lengths, types, counters, control examples,
+outer checksums and decoded per-channel level summaries. Full-file audio energy
+uses the braided mapping from the earlier notes. It validates unpacking
+consistency, not calibrated analogue quality. Bounded numpy excerpts are
+temporary analysis data and are not required for the report.
+
+deepen_analysis.py produces deep_evidence.json, including exact control blocks,
+per-message counts, declaration interpretation, inner checksums, length checks,
+stable-run candidates and damaged-header packet indexes. It also produces
+meres47_slot_comparison.json with the exact-block forwarding evidence.
+
+Run from the study directory's parent with Python 3 and numpy:
+  python3 capture_study/analyze_captures.py upload capture_study/results
+  python3 capture_study/deepen_analysis.py
+
+The analysis tools use Ethernet link type 1 and report unsupported link types.
+They are offline research utilities, not production REAC parsers or drivers.
+Capture time is converted to floating-point seconds for summaries; the stated
+nanosecond unit must not be interpreted as nanosecond accuracy.
+
+The earlier source review remains pinned to the commits recorded in the
+original notebook. No claim is made that the repositories were updated to
+their latest 25 October revisions. Packet observations are the new evidence.
+
+The bundle contains the English study, machine-readable results, the analysis
+scripts and the earlier M-400 feasibility assessment. Original packet captures,
+the browser executable and the desktop screenshot are not duplicated.
+
+
+17. CONTINUATION STATUS
+
+2026-10-25 — v0.2: reviewed all 14 accessible user captures; identified the
+short/full console frame transition, 6908 exact forwarded audio blocks, rate
+and inventory discrepancies, 29 damaged-header candidates and 32 DT1 length
+inconsistencies. Legacy project source and three failed captures remain missing.
+No live transmission, Windows driver build or physical hardware test performed.
