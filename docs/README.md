@@ -6,6 +6,8 @@ Target: Roland M-400 + S-1608, Windows, FL Studio, simultaneous 40 mono capture 
 
 | Document | Purpose |
 |---|---|
+| [M1 offline implementation](M1_Offline_Core_EN.md) | Build, CLI, import contract, public fixture provenance and next evidence |
+| [M1 validation](M1_Validation_EN.md) | Executed tests and unrun Windows/hardware checks |
 | [Hungarian summary](Osszefoglalo_HU.md) | Accessible explanation, findings and next step |
 | [English notebook v0.3](REAC_Research_Notes_EN.txt) | Consolidated historical and current evidence; read Sections 18-19 for current corrections |
 | [M-400 system model](reports/M400_System_Model_EN.md) | Signal direction, A/B/SPLIT, routing/DSP limits, clock and acceptance criteria |
@@ -25,7 +27,7 @@ These are historical documents. Their missing-file statements refer to the earli
 
 ## Publication scope
 
-Only documentation is published. Captures, machine-readable measurement results, fixtures, analysis scripts, source checkouts and binaries remain outside this repository. Local artifact paths in reports are provenance references to the original research workspace and are not downloadable GitHub files. The measurement-plan documents are instructions for future experiments, not uploaded measurements.
+The original November research upload contained only documentation. M1 now adds a separately authored offline core, CLI, tests and import tools. Captures, machine-readable measurement results, fixtures, historical analysis scripts, upstream source checkouts and binaries remain outside this repository. Local artifact paths in reports are provenance references to the original research workspace and are not downloadable GitHub files. The measurement-plan documents are instructions for future experiments, not uploaded measurements.
 
 The notebook's source register and commit-pinned external links retain attribution. Local source/report snapshots describe their stated review date; do not call an old pinned tree the current upstream HEAD without a new check.
 

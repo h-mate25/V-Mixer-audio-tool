@@ -4,6 +4,25 @@ Research and documentation for Roland REAC integration with an **M-400 + S-1608*
 
 This repository starts with the completed offline research, source comparisons and development/validation roadmap. A production Windows driver, accepted virtual forty-input endpoint and stable 40 x 40 hardware session have not been established.
 
+## Offline implementation (M1)
+
+The repository now also contains a new **C++20 / CMake / CTest offline core and
+inspector**. It decodes explicit PCM geometries, diagnoses frame/control integrity
+and imports a narrow PCAPNG subset. It does not transmit packets or provide an
+ASIO driver.
+
+- [Build, CLI input format, fixture provenance and limitations](docs/M1_Offline_Core_EN.md).
+- [Executed tests and unrun platform/hardware checks](docs/M1_Validation_EN.md).
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+cmake --build build --parallel 4
+ctest --test-dir build --output-on-failure
+```
+
+The public-reference test requires an external pinned fixture cache; see the
+instructions above. Build and synthetic tests work without network access.
+
 ## Start here
 
 - **[Magyar összefoglaló](docs/Osszefoglalo_HU.md)** - findings, project comparison and remaining questions.
@@ -21,7 +40,7 @@ This repository starts with the completed offline research, source comparisons a
 
 ## Publication scope
 
-This is a **documentation-only upload**, as requested by the repository owner. It contains the authored notebook, Hungarian summaries, English reviews, measurement plans and historical handoff documents. It does not contain packet captures, measurement datasets, JSON/CSV analysis results, raw-byte fixtures, the data bundle ZIP, executables, legacy implementation code or upstream source checkouts.
+The original 4 November upload was **documentation-only**, as requested by the repository owner. That historical upload contains the authored notebook, Hungarian summaries, English reviews, measurement plans and historical handoff documents. The repository does not contain packet captures, measurement datasets, JSON/CSV analysis results, raw-byte fixtures, the data bundle ZIP, executables, legacy implementation code or upstream source checkouts.
 
 Reports still describe those local evidence artifacts and record their hashes/revision pins. References to omitted local files are identified as local artifacts rather than broken GitHub links. The historical handoff is context to verify; current conclusions are in notebook Sections 18-19 and the November audit.
 
