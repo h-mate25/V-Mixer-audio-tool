@@ -6,6 +6,8 @@ Target: Roland M-400 + S-1608, Windows, FL Studio, simultaneous 40 mono capture 
 
 | Document | Purpose |
 |---|---|
+| [Implementation plan](Implementation_Plan_EN.md) | Fresh architecture, ordered work and acceptance gates; source-dependent decisions marked |
+| [Legacy reassessment](reports/Legacy_Reassessment_2026-11-06_EN.md) | Historical findings versus new captures/current M1; actual ZIP review remains blocked |
 | [M1 offline implementation](M1_Offline_Core_EN.md) | Build, CLI, import contract, public fixture provenance and next evidence |
 | [M1 validation](M1_Validation_EN.md) | Executed tests and unrun Windows/hardware checks |
 | [Release capture audit (6 November)](reports/Release_Capture_Audit_2026-11-06_EN.md) | Original H02/H03 bytes, operator-confirmed mapping, controls and remaining slave evidence |
