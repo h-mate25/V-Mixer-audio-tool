@@ -1,50 +1,20 @@
-# V-Mixer audio tool
+# Windows REAC ASIO – történeti forrásarchívum
 
-Research and documentation for Roland REAC integration with an **M-400 + S-1608**, targeting **Windows and FL Studio with simultaneous 40 mono inputs and 40 mono outputs**.
+Ez az ág a `Windows Reac ASIO` munkamappa két projektjének 86 fájlos forrás-pillanatképe. A fájlok eredeti alkönyvtár-szerkezete a [legacy/](legacy/) alatt található. A pillanatkép helyi munkafájlokból készült, ezért nem feleltethető meg automatikusan egy korábbi Git-commitnak.
 
-This repository starts with the completed offline research, source comparisons and development/validation roadmap. A production Windows driver, accepted virtual forty-input endpoint and stable 40 x 40 hardware session have not been established.
+| Projekt | Mire használható később? | Kiindulópont |
+| --- | --- | --- |
+| **Windows REAC ASIO** | Windows x64 ASIO illesztés, Npcap adapterkezelés, PCM-dekódolás, gyűrűpuffer, WASAPI-monitorozás és kísérleti REAC-adás összehasonlításához. | [Eredeti leírás](legacy/README.md), [projektáttekintés](legacy/docs/project_overview_hu.md), [protokolljegyzetek](legacy/docs/reac_protocol_notes.md), [forrás](legacy/src/), [eszközök](legacy/tools/) |
+| **reaccapture (old project)** | A korábbi Windowsos rögzítés és 24 bites WAV-export megértéséhez. A Windowsos leírás dumpcap/Npcap útvonalat ismertet, a forrásfában libpcap-alapú kód is található. | [Windowsos leírás](legacy/reaccapture%20%28old%20project%29/README.md), [eredeti leírás](legacy/reaccapture%20%28old%20project%29/README), [forrás](legacy/reaccapture%20%28old%20project%29/src/), [licencszöveg](legacy/reaccapture%20%28old%20project%29/COPYING) |
 
-## Offline implementation (M1)
+## Hol érdemes kezdeni?
 
-The repository now also contains a new **C++20 / CMake / CTest offline core and
-inspector**. It decodes explicit PCM geometries, diagnoses frame/control integrity
-and imports a narrow PCAPNG subset. It does not transmit packets or provide an
-ASIO driver.
+- **M1 összehasonlítás** – [keretparser](legacy/src/reac/reac_packet_parser.cpp), [kódoló](legacy/src/reac/reac_packet_encoder.cpp) és [csomagteszt](legacy/tools/reac_packet_test/reac_packet_test.cpp). A régi 340 bájtos csomagoknál a 16×6 és 8×12 értelmezés megkülönböztetéséhez a mérési környezetet is ellenőrizni kell.
+- **Windowsos hangút** – [ASIO réteg](legacy/src/asio/), [audio motor és gyűrűpuffer](legacy/src/audio/), [REAC RX/TX](legacy/src/reac/).
+- **A korábbi rögzítő** – [reaccapture.cc](legacy/reaccapture%20%28old%20project%29/src/reaccapture.cc), [pcaploader.cc](legacy/reaccapture%20%28old%20project%29/src/pcaploader.cc) és [pcapreader_win.cc](legacy/reaccapture%20%28old%20project%29/src/pcapreader_win.cc).
 
-- [Build, CLI input format, fixture provenance and limitations](docs/M1_Offline_Core_EN.md).
-- [Executed tests and unrun platform/hardware checks](docs/M1_Validation_EN.md).
-- [New SPLIT/B capture findings and packet-construction boundaries](docs/reports/Release_Capture_Audit_2026-11-06_EN.md).
-- [Implementation plan and acceptance gates](docs/Implementation_Plan_EN.md).
-- [Legacy reassessment and outstanding source review](docs/reports/Legacy_Reassessment_2026-11-06_EN.md).
+## Az archívum határai
 
-```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build --parallel 4
-ctest --test-dir build --output-on-failure
-```
+A Windows driverhez megmaradt a Visual Studio megoldás, a CMake-konfiguráció és a telepítőszkriptek. A CMake C++17-et kér, az ASIO SDK helyét az `ASIO_SDK_DIR` változóval lehet megadni. A régi rögzítőhöz megmaradtak az Autotools-bemenetek és az eredeti licencszöveg. Az eredeti leírások történeti állapotot tükröznek. A nyilvános másolatban a gépfüggő útvonalakat, az adapterazonosítót és a mérésekhez tartozó azonosítókat helyettesítők váltják fel. Ez a régi vevő MAC-szűrőjét és a capture-elemző MAC-párját is érinti. Ezeket használat előtt a saját hálózathoz kell igazítani. Ezen az ágon nem ellenőriztük a fordítást, a driver regisztrálását, az élő adást vagy a kétirányú 40×40 működést.
 
-The public-reference test requires an external pinned fixture cache; see the
-instructions above. Build and synthetic tests work without network access.
-
-## Start here
-
-- **[Magyar összefoglaló](docs/Osszefoglalo_HU.md)** - findings, project comparison and remaining questions.
-- **[Documentation index](docs/README.md)** - full English technical reports and research notebook.
-- **[English research notebook v0.3](docs/REAC_Research_Notes_EN.txt)** - historical evidence, corrections, exact source revisions and November continuation.
-- **[Új mérések útmutatója](docs/Uj_Meresek_HU.md)** - controlled next capture campaign, when needed.
-
-## Current findings
-
-- The source review covers FreeREAC plus the four related public projects and the supplied legacy Windows source as reference material.
-- The offline study analyzed 58 supplied captures; the reports distinguish measured bytes, source behavior, upstream claims and hypotheses.
-- The legacy transmitter's 16-channel/six-sample format and packet-rate clock comparison explain concrete software mechanisms for observed discrepancies.
-- A FreeREAC 40-input/zero-output profile has a forty-channel capture-node fallback, but M-400 acceptance and B-port patch exposure remain open hardware questions.
-- A fresh Windows implementation needs separate codec, validated session state, Ethernet transport/clock, continuous rings and ASIO layers. The legacy project is not the chosen implementation base.
-
-## Publication scope
-
-The original 4 November upload was **documentation-only**, as requested by the repository owner. That historical upload contains the authored notebook, Hungarian summaries, English reviews, measurement plans and historical handoff documents. The repository does not contain packet captures, measurement datasets, JSON/CSV analysis results, raw-byte fixtures, the data bundle ZIP, executables, legacy implementation code or upstream source checkouts.
-
-Reports still describe those local evidence artifacts and record their hashes/revision pins. References to omitted local files are identified as local artifacts rather than broken GitHub links. The historical handoff is context to verify; current conclusions are in notebook Sections 18-19 and the November audit.
-
-Research dates: 17-26 October and 4 November 2026. Documentation published 4 November 2026. See the [source register](docs/REAC_Research_Notes_EN.txt) and immutable links in the reports for attribution.
+A nyilvános ágon nincs helyi Git-adatbázis vagy IDE-gyorsítótár, generált buildkönyvtár, kész EXE/DLL, felhasználói capture-konfiguráció, parancsikon vagy nyers mérés. A külön licencelésű Steinberg ASIO SDK, a Npcap SDK 1.16, valamint az `external/` alatti FreeREAC- és egyéb upstream-másolatok külön beszerzendő referenciák. A csomagolás nem választ új licencet a projekthez.

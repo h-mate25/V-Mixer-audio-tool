@@ -1,0 +1,15 @@
+Windows Registry Editor Version 5.00
+
+; Template only. Prefer install.bat/regsvr32 because it writes the actual DLL path.
+; Replace C:\\Path\\To\\WindowsReacASIO.dll before importing manually.
+
+[HKEY_CLASSES_ROOT\CLSID\{8D86067A-75E4-4E9B-85CC-24E2D5814E07}]
+@="Windows REAC ASIO Virtual Input Driver"
+
+[HKEY_CLASSES_ROOT\CLSID\{8D86067A-75E4-4E9B-85CC-24E2D5814E07}\InprocServer32]
+@="C:\\Path\\To\\WindowsReacASIO.dll"
+"ThreadingModel"="Both"
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\ASIO\Windows REAC ASIO]
+"CLSID"="{8D86067A-75E4-4E9B-85CC-24E2D5814E07}"
+"Description"="Windows REAC ASIO Virtual Input Driver"

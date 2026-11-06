@@ -1,0 +1,8 @@
+build/
+build-cmake/
+external/research/
+.vs/
+*.user
+*.suo
+*.VC.db
+*.VC.VC.opendb
