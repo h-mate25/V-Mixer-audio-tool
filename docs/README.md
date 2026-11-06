@@ -8,6 +8,8 @@ Target: Roland M-400 + S-1608, Windows, FL Studio, simultaneous 40 mono capture 
 |---|---|
 | [M1 offline implementation](M1_Offline_Core_EN.md) | Build, CLI, import contract, public fixture provenance and next evidence |
 | [M1 validation](M1_Validation_EN.md) | Executed tests and unrun Windows/hardware checks |
+| [Release capture audit (6 November)](reports/Release_Capture_Audit_2026-11-06_EN.md) | Original H02/H03 bytes, operator-confirmed mapping, controls and remaining slave evidence |
+| [Local passive measurement note (Hungarian)](M1_Passziv_Meresek_HU.md) | Separately recorded Windows x64 run and sampled PCM checks |
 | [Hungarian summary](Osszefoglalo_HU.md) | Accessible explanation, findings and next step |
 | [English notebook v0.3](REAC_Research_Notes_EN.txt) | Consolidated historical and current evidence; read Sections 18-19 for current corrections |
 | [M-400 system model](reports/M400_System_Model_EN.md) | Signal direction, A/B/SPLIT, routing/DSP limits, clock and acceptance criteria |

@@ -243,6 +243,12 @@ Keep private captures, extracted frames, PCM and exports outside this checkout.
 
 ## Evidence still needed
 
+**Update, 6 November:** the owner's GitHub release now makes both original
+captures accessible. The [release audit](reports/Release_Capture_Audit_2026-11-06_EN.md)
+checks their complete bytes, control/scene data and owner-confirmed four-point
+SPLIT mapping. The attachment limit described below records the earlier M1
+session; it no longer blocks access through those release URLs.
+
 The two H02/H03 uploads attached on 5 November 2026 could not be downloaded into
 the execution workspace: both exceed the transfer tool's **32 MiB per-file limit**.
 Their raw bytes, geometry, contents and hashes were not examined. They are not

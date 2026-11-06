@@ -1,6 +1,7 @@
 """CLI and narrow PCAPNG adapter tests, using authored synthetic bytes only."""
 import importlib.util
 import io
+import hashlib
 import json
 from pathlib import Path
 import struct
@@ -87,6 +88,53 @@ class Tools(unittest.TestCase):
                     capture(extra=struct.pack("<HH", 2, 100)), data + block(3, b"\0" * 4, "<")]:
             with self.assertRaises(ValueError):
                 list(importer.records(io.BytesIO(bad)))
+
+    def test_capture_audit(self):
+        script = Path(__file__).parents[1] / "tools/audit_pcapng.py"
+        with tempfile.TemporaryDirectory() as directory:
+            src = Path(directory) / "audit.pcapng"
+            src.write_bytes(capture() + capture(">"))
+            p = subprocess.run([sys.executable, str(script), str(src)], capture_output=True, text=True)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            report = json.loads(p.stdout)
+            self.assertEqual(report["records"]["records"], 2)
+            self.assertEqual(report["frame_types"], {"0000": 2})
+            self.assertEqual(len(report["streams"]), 2)  # section identity scopes counters
+            self.assertIsNone(report["duration_seconds"])
+            src.write_bytes(capture() + capture()[48:])  # same section/interface, second EPB
+            p = subprocess.run([sys.executable, str(script), str(src)], capture_output=True, text=True)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            report = json.loads(p.stdout)
+            stream = next(iter(report["streams"].values()))
+            self.assertEqual(stream["sequence_steps"], {"duplicate_counter": 1})
+
+    def test_audit_control_and_scene(self):
+        script = Path(__file__).parents[1] / "tools/audit_pcapng.py"
+        def controlled(block_data, sequence):
+            raw = bytearray(frame())
+            raw[14:16] = sequence.to_bytes(2, "little")
+            raw[16:18] = bytes.fromhex("cdea")
+            block_data = bytearray(block_data.ljust(32, b"\0"))
+            block_data[31] = -sum(block_data[:31]) % 256
+            raw[18:50] = block_data
+            return bytes(raw)
+        first = controlled(bytes.fromhex("01010003000005") + b"abc", 1)
+        last = controlled(bytes.fromhex("0102000200") + b"de", 2)
+        write = controlled(bytes.fromhex("04030013000200fe0ef0410a0000121201010000017df7"), 3)
+        query_bytes = bytearray(write[18:50])
+        query_bytes[15] = 0x11
+        query = controlled(bytes(query_bytes), 4)
+        with tempfile.TemporaryDirectory() as directory:
+            src = Path(directory) / "scenes.pcapng"
+            src.write_bytes(capture(cap=first) + capture(cap=last)[48:] + capture(cap=write)[48:] + capture(cap=query)[48:])
+            p = subprocess.run([sys.executable, str(script), str(src), "--timestamp-exponent", "9"], capture_output=True, text=True)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            report = json.loads(p.stdout)
+            self.assertEqual(report["control"]["outer_pass"], 4)
+            self.assertEqual(report["sysex_commands"], {"12": 1, "11": 1})
+            self.assertEqual(report["scenes"][0]["status"], "length_complete")
+            self.assertEqual(report["scenes"][0]["actual"], 5)
+            self.assertEqual(report["scenes"][0]["sha256"], hashlib.sha256(b"abcde").hexdigest())
 
     def test_import_to_cli(self):
         with tempfile.TemporaryDirectory() as d:

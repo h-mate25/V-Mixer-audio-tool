@@ -13,6 +13,7 @@ ASIO driver.
 
 - [Build, CLI input format, fixture provenance and limitations](docs/M1_Offline_Core_EN.md).
 - [Executed tests and unrun platform/hardware checks](docs/M1_Validation_EN.md).
+- [New SPLIT/B capture findings and packet-construction boundaries](docs/reports/Release_Capture_Audit_2026-11-06_EN.md).
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
