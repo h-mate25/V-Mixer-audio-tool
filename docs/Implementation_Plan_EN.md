@@ -1,17 +1,19 @@
 # Implementation plan: fresh Windows REAC / FL Studio interface
 
-Draft 1, 6 November 2026. Intended outcome: one Windows endpoint with **40 mono
+Draft 2, 6 November 2026. Intended outcome: one Windows endpoint with **40 mono
 ASIO inputs and 40 mono ASIO outputs**, M-400 FOH master, real S-1608 on REAC A,
 software slave on the **separate REAC B**, initial hardware work at **48 kHz**.
 This plan extends the existing C++20/CMake/CTest implementation; it does not fork
 the legacy project. User communication is Hungarian; engineering documents and
 source comments are English.
 
-**Status:** the offline foundation and new passive evidence are available. A
-fresh line-by-line review of the newly attached legacy ZIP is blocked by its
-32 MiB transfer limit. The [reassessment](reports/Legacy_Reassessment_2026-11-06_EN.md)
-separates direct current-code observations, historical source findings, new
-measurements and owner reports. Tasks below do not pretend that review is done.
+**Status:** the offline foundation, new passive evidence and a direct archived
+source review are available. The [branch audit](reports/Legacy_Branch_Audit_2026-11-06_EN.md)
+pins both historical projects at `9952f13dd898d252d47a99040158903591f04858`
+and records actual portable tests. It supersedes the earlier source-access
+blocker. The owner identifies the long successful connection as the ASIO-driver /
+FL Studio path; exact binary/settings/trace attribution remains open. Public
+archive identifiers are redacted and are not the original local configuration.
 
 ## 1. Decisions and boundaries
 
@@ -46,8 +48,8 @@ forwarding at four tested sockets is not a default B-port map.
 | E01 | Public pinned PCM/control fixtures and M1 tests | Available; preserve independent digests and negative cases |
 | E02 | New original H02/H03 captures | Fully read; [audit](reports/Release_Capture_Audit_2026-11-06_EN.md) records hashes, counts, controls and limits |
 | E03 | Owner's socket order and emulator stopped | Supports tested SPLIT mapping 1→9, 2→10, 9→17, 16→24; not original upstream geometry |
-| E04 | Old emulator sustained slave connection | Owner-reported; recover exact binary/source/configuration and whether bidirectional audio ran |
-| E05 | New legacy ZIP | Not readable through current transfer; fresh source review pending |
+| E04 | Old emulator sustained slave connection | Owner identifies **ASIO driver / FL Studio**, not the separate probe; recover exact binary/configuration/rate and whether bidirectional audio ran |
+| E05 | Archived legacy source | **Available and reviewed:** pinned `archive/windows-reac-asio` tree contains driver and earlier recorder; local unredacted ZIP identity remains separate |
 | E06 | Original stagebox request/reply and maintenance sequence | Absent from passive downstream captures; use an identifiable successful emulator trace or H01 if a tap/mirror is already available |
 | E07 | Firmware, B patch screenshots, input/output inventory exposure | Required before selecting/claiming the forty-route identity; missing details stay unknown |
 | E08 | Windows x64 evidence | Separate repository note reports M1 Release on Windows; this environment's builds/tests are Linux. New adapters require their own Windows runs |
@@ -110,6 +112,8 @@ import/audit tools exist. None of its arrows imply a running network transmitter
 - **Rings and block adapter:** bounded operations and explicit underflow/overflow
   policy. Preserve callback residuals across packet boundaries; define startup
   prefill, stale-data flushing, generation changes and discontinuity reporting.
+  Resets require producer/consumer quiescence or an explicit generation protocol;
+  count requested, real, zero-filled and discarded samples separately.
 - **ASIO adapter:** one full-duplex endpoint. No network blocking, dynamic buffer
   allocation or log/file I/O in the real-time callback. DAW start/stop does not
   own network enrollment. Handle callback thread rules and sample position from
@@ -123,23 +127,24 @@ state dimensions to avoid a misleading single `connected` flag.
 
 ## 4. Ordered implementation and acceptance gates
 
-Milestones retain the original M1–M5 meaning. Substeps below make the next work
-reviewable without silently claiming that the missing old source was inspected.
-There is no fixed time estimate until source access and target-host evidence are
-available. Each step ends with a usable artifact and an explicit result.
+Milestones retain the original M1–M5 meaning. Substeps below distinguish completed
+static source review from unresolved runtime attribution. There is no fixed time
+estimate until successful-run identity and target-host evidence are available. Each step ends with a usable artifact and an explicit result.
 
-### S0: fresh legacy review (source-dependent)
+### S0: archived source review and successful-runtime attribution
 
-Deliver: archive/file manifest, actual executable/configuration call graph,
-claim-versus-code table and a reconstruction of the reported successful path.
-Review TX templates, handshake/maintenance triggers, counter ownership, clock,
-queues, routing and ASIO lifetime; distinguish code used by the ASIO driver from
-standalone probes/dead helpers. Preserve source outside the public checkout.
+Completed static work: pinned tree/file hashes, actual driver/probe/recorder call
+paths, claim-versus-code comparison and portable packet/helper/ring tests are in
+the branch audit. TX templates, trigger gates, clock, queues, routing and ASIO
+lifetime were directly examined. The separate preset uses 44.1k/8x12, while the
+ASIO driver uses 16x6 and host-rate/6; the owner's success belongs to the latter
+path. The source access task is closed for this snapshot.
 
-Acceptance: every retained old-code claim cites this supplied version; exact
-successful binary/profile is identified or explicitly unknown. Historical defects
-are rechecked rather than inherited. This blocks conclusions about the old
-program; it does **not** block M1.1 or other evidence-independent portable work.
+Remaining: match the successful run to a binary and effective configuration,
+including rate, return map, buffers, identifiers and trace. Verify which public
+placeholder substitutions differ from that runtime. The source review does not
+prove the running binary's identity, a physical watchdog period or correct audio.
+This runtime attribution does **not** block M1.1's independent portable work.
 
 ### M1.1: strengthen the offline contract (next implementation step)
 
@@ -200,8 +205,11 @@ frequency offsets. Do not claim PCAP arrival time is a hardware timestamp.
 
 Acceptance: malformed, stale-generation, wrong-peer or merely checksum-valid
 records never establish a session; valid PCM continues across maintenance;
-control deadlines and clock failure are distinct logged causes. Timeout values
-and any hardware profile remain provisional until supported by a matching trace.
+control deadlines and clock failure are distinct logged causes. A valid slot-map
+trigger alone cannot establish a session. The old 200 ms host debounce is not a
+console watchdog; expose debounce, reply deadline, peer silence and clock-estimate
+freshness separately. Timeout values and any hardware profile remain provisional
+until supported by a matching trace.
 Offline simulation may proceed, but active enrollment is blocked on those facts.
 
 ### M3.1: minimal coordinated B endpoint
@@ -258,7 +266,7 @@ before measurement. One hour is a test target, not a vendor guarantee.
 
 | Priority | Task | Required input | Result / validation |
 |---|---|---|---|
-| P0 | Obtain source-only legacy archive and identify the successful path | E05; local binary/configuration identity if available | S0 review; history corrected per actual version |
+| P0 | Identify the exact successful **ASIO / FL Studio** runtime | E04; binary/rate/configuration/trace identity | S0 static review is done; runtime tied to the correct path rather than the probe preset |
 | P0 | Make validation status unambiguous | Current M1, C01/C04 | Explicit checked/unknown/invalid cases; no unchecked success |
 | P0 | Inspect controls independently of audio geometry; model RQ1 | Current M1, E02 | Initial 340-byte controls retained; six requests identified without false ready/grant |
 | P1 | Typed offline full-frame generation | Current codec and complete public record rules | Exact length/marker/checksums, independent expectations, continuous control-bearing PCM |
@@ -297,6 +305,8 @@ The next implementation increment is complete when M1.1 provides reliable
 validation dispositions, typed request/write diagnostics and a tested offline
 full-frame builder. It does not require buying a tap or installing ASIO.
 
-The next **legacy review** increment is complete only after the actual source
-archive is readable and S0 has been performed. The plan remains a draft until
-that comparison can confirm or revise the source-dependent design assumptions.
+The archived-source review increment is complete for the pinned, redacted tree;
+its portable checks and limitations are recorded in the branch audit. The next
+legacy-dependent increment is attribution of the owner's successful ASIO run,
+not another source transfer. The plan remains a draft until those runtime facts
+and the active endpoint/patch/clock experiments resolve the remaining assumptions.

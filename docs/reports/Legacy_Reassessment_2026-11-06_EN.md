@@ -5,6 +5,12 @@ source review blocked by source access**. This document is a research input to
 [the implementation plan](../Implementation_Plan_EN.md), not a completed audit of
 the newly attached ZIP.
 
+**Later update, same day:** source access is now resolved through the pinned
+`archive/windows-reac-asio` branch. See the [direct source review and portable
+checks](Legacy_Branch_Audit_2026-11-06_EN.md). The owner identifies the successful
+runtime as the ASIO driver / FL Studio. The access-blocked wording below preserves
+the initial comparison's historical scope; it is superseded by that direct audit.
+
 ## 1. What was actually available
 
 The owner requested a thorough review of `Windows Reac ASIO.zip`, comparison

@@ -15,7 +15,7 @@ ASIO driver.
 - [Executed tests and unrun platform/hardware checks](docs/M1_Validation_EN.md).
 - [New SPLIT/B capture findings and packet-construction boundaries](docs/reports/Release_Capture_Audit_2026-11-06_EN.md).
 - [Implementation plan and acceptance gates](docs/Implementation_Plan_EN.md).
-- [Legacy reassessment and outstanding source review](docs/reports/Legacy_Reassessment_2026-11-06_EN.md).
+- [Direct legacy branch audit and implementation lessons](docs/reports/Legacy_Branch_Audit_2026-11-06_EN.md).
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
